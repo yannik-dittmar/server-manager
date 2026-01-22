@@ -1,0 +1,126 @@
+# Generic example docker-compose for server-control
+# 
+# This template shows how to use server-control with any Docker container.
+# The controlled service will be started on-demand when traffic is detected
+# and stopped after a period of inactivity.
+#
+# Adapt this for your own services (game servers, dev environments, etc.)
+
+services:
+  # =============================================================================
+  # Server Control - The traffic monitor and container controller
+  # =============================================================================
+  server-control:
+    build: .
+    # Or use a pre-built image:
+    # image: ghcr.io/yourusername/server-control:latest
+    container_name: my-server-control
+    restart: unless-stopped
+    
+    # Required capabilities for packet capture
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    
+    environment:
+      # -------------------------------------------------------------------------
+      # Required Configuration
+      # -------------------------------------------------------------------------
+      
+      # Name of the container to start/stop (must match container_name below)
+      - CONTAINER_NAME=my-app
+      
+      # Ports to monitor for incoming traffic (at least one required)
+      - TCP_PORTS=8080
+      # - TCP_PORTS=8080,8443,9000        # Multiple TCP ports
+      # - UDP_PORTS=53,1194                # UDP ports (can combine with TCP)
+      
+      # -------------------------------------------------------------------------
+      # Optional Configuration
+      # -------------------------------------------------------------------------
+      
+      # Minutes of inactivity before stopping the container (default: 30)
+      - INACTIVITY_TIMEOUT=15
+      
+      # Network interface to monitor (default: eth0)
+      # - NETWORK_INTERFACE=eth0
+      
+      # Allow traffic from specific subnets (bypasses GeoIP check)
+      # Useful for local networks, VPNs, etc.
+      # - ALLOWED_SUBNETS=192.168.0.0/16,10.0.0.0/8,172.16.0.0/12
+      
+      # GeoIP filtering (disabled by default)
+      # When enabled, only connections from allowed countries trigger server start
+      # - GEOIP_ENABLED=true
+      # - ALLOWED_COUNTRIES=DE,AT,CH,US,GB
+    
+    volumes:
+      # Required: Docker socket to control containers
+      - /var/run/docker.sock:/var/run/docker.sock
+    
+    ports:
+      # Expose the ports your application uses
+      # These go on server-control since it handles the network
+      - "8080:8080"
+      # - "8443:8443"
+    
+    stop_grace_period: 5s
+
+  # =============================================================================
+  # Your Application - The container being controlled
+  # =============================================================================
+  app:
+    image: nginx:alpine  # Replace with your actual application image
+    container_name: my-app  # Must match CONTAINER_NAME above
+    restart: unless-stopped
+    
+    # Use the network stack of server-control
+    # This is what allows server-control to see incoming traffic
+    network_mode: service:server-control
+    
+    # Your application's configuration
+    environment:
+      - SOME_VAR=value
+    
+    volumes:
+      - ./app-data:/data
+    
+    # Note: Don't expose ports here - they're exposed on server-control
+    # ports:
+    #   - "8080:8080"  # DON'T DO THIS
+
+
+# =============================================================================
+# Example Configurations for Common Use Cases
+# =============================================================================
+#
+# --- Minecraft Server ---
+# environment:
+#   - CONTAINER_NAME=minecraft
+#   - TCP_PORTS=25565
+#   - INACTIVITY_TIMEOUT=10
+#
+# --- Valheim Server ---
+# environment:
+#   - CONTAINER_NAME=valheim
+#   - UDP_PORTS=2456,2457,2458
+#   - INACTIVITY_TIMEOUT=30
+#
+# --- Web Application (HTTP/HTTPS) ---
+# environment:
+#   - CONTAINER_NAME=webapp
+#   - TCP_PORTS=80,443
+#   - INACTIVITY_TIMEOUT=5
+#
+# --- Development Database ---
+# environment:
+#   - CONTAINER_NAME=dev-postgres
+#   - TCP_PORTS=5432
+#   - ALLOWED_SUBNETS=192.168.1.0/24
+#   - INACTIVITY_TIMEOUT=60
+#
+# --- VPN Server ---
+# environment:
+#   - CONTAINER_NAME=wireguard
+#   - UDP_PORTS=51820
+#   - INACTIVITY_TIMEOUT=120
